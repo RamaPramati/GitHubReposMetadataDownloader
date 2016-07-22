@@ -10,19 +10,21 @@ import com.typesafe.config.ConfigFactory
   * Created by ramakrishnas on 19/7/16.
   */
 class GitHubReposDownloader extends Actor with Logger {
-  val remoteGitHubReposMetadataDownloaderPath: String = "akka.tcp://GitHubRepoMetadataDownloader@" +
-    "127.0.0.1:5150/user/gitHubRepoMetadataDownloader"
 
+  val conf = ConfigFactory.load()
   override def receive: Receive = {
     case "RECEIVED" => {
-      log.info("Remote received and started the given task........");
+      log.info("Remote actor started the given task........");
+    }
+    case "INPUT-ERROR" => {
+      log.info("Wrong input........");
     }
     case "COMPLETED" => {
-      log.info("Remote completed the given task.......");
+      log.info("Remote actor completed the given task.......");
       context.system.shutdown
     }
     case msg => {
-      val remoteGitHubReposMetadataDownloader = context.actorSelection(remoteGitHubReposMetadataDownloaderPath)
+      val remoteGitHubReposMetadataDownloader = context.actorSelection(conf.getString("remoteGitHubReposMetadataDownloaderPath"))
       remoteGitHubReposMetadataDownloader ! msg
     }
   }
@@ -33,10 +35,10 @@ object ClientGitHubReposMetadataDownloader {
     var since = args(0).toInt
     var to = args(1).toInt
     val configFile = getClass.getClassLoader.
-      getResource("local_gitHubReposMetadataDownloader.conf").getFile
+      getResource("clientGitHubReposMetadataDownloader.conf").getFile
     val config = ConfigFactory.parseFile(new File(configFile))
     val system = ActorSystem("ClientSystem", config)
     val localActor = system.actorOf(Props[GitHubReposDownloader], name = "local")
-    localActor ! since + "," + to
+    localActor ! since + "-" + to
   }
 }

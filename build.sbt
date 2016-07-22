@@ -1,5 +1,5 @@
 
-name := "akka-remote-simple-scala"
+name := "github-repos-metadata-downloader"
 
 version := "1.0"
 
