@@ -1,97 +1,73 @@
 package com.githubrepodownloader.main
 
 import java.io._
-import java.util.Properties
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.routing.RoundRobinPool
 import com.githubrepodownloader.logging.Logger
 import com.typesafe.config.ConfigFactory
-import org.apache.commons.httpclient.{HttpClient, MultiThreadedHttpConnectionManager}
 import org.apache.commons.httpclient.methods.GetMethod
+import org.apache.commons.httpclient.{HttpClient, MultiThreadedHttpConnectionManager}
 import org.json4s.JsonAST.{JField, JObject}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 
-import scala.collection.immutable.Map
 import scala.util.Try
 
 /**
   * Created by ramakrishnas on 18/7/16.
   */
-case class GetRepositoryMetaData(printWriter: PrintWriter, repoMap: Map[String, String])
+case class GetRepositoryMetaData(repoMetadataWriter: PrintWriter, repoMap: List[String])
 
-case class Superviser(id: String)
+case class updateTaskCompletion()
 
-object GitHubRepoMetadataDownloader extends App {
-  val prop = new Properties()
-  prop.load(new FileInputStream("currentStatus.properties"))
+object GitHubReposMetadataDownloader extends App {
 
   val configFile = getClass.getClassLoader.
     getResource("gitHubReposMetadataDownloader.conf").getFile
   val config = ConfigFactory.parseFile(new File(configFile))
   val system = ActorSystem("GitHubRepoMetadataDownloaderActorSystem", config)
-  val remoteActor = system.actorOf(Props[GitHubRepoMetadataDownloaderActor],
+  val remoteActor = system.actorOf(Props[GitHubReposMetadataDownloaderActor],
     name = "gitHubRepoMetadataDownloaderActor")
-
-  val requestedTill = prop.getProperty("ReposMetadataRequestedTill")
-  val writtenTill = prop.getProperty("ReposMetadataWrittenTill")
-  if (requestedTill > writtenTill)
-    remoteActor ! writtenTill + "-" + requestedTill
 }
 
-class GitHubRepoMetadataDownloaderActor extends Actor with Logger {
-  val prop = new Properties()
-  prop.load(new FileInputStream("currentStatus.properties"))
-  val conf = ConfigFactory.load()
+class GitHubReposMetadataDownloaderActor extends Actor with Logger {
 
-  var noOfRequests = 0;
+  val conf = ConfigFactory.load()
   var noOfRepos = 0
   val noOfWorkers = conf.getString("noOfWorkers").toInt
-  val repoMetadataWriter = new PrintWriter("" + conf.getString("metadataDir") +
-    self.path.name + ".txt")
   val workerRouter = context.actorOf(Props[RepositoryMetaDataDownloader].
     withRouter(RoundRobinPool(noOfWorkers)), "workers")
+  val clientGitHubReposMetadataDownloader = context.actorSelection(conf.getString("clientGitHubReposMetadataDownloaderPath"))
+  val repoMetadataWriter = new PrintWriter(conf.getString("metadataDir") +
+    self.path.name + ".txt")
 
   override def receive: Actor.Receive = {
-    case "RECEIVED" | "COMPLETED" | "INPUT-ERROR" =>
-      log.info("Working on previous tasks")
-    case Superviser(id) =>
+    case updateTaskCompletion() =>
       noOfRepos -= 1
-      noOfRequests += 1;
-      if (noOfRequests == conf.getInt("rateLimit"))
-        GitHubApiHelper.updateToken()
       if (0 == noOfRepos) {
-        repoMetadataWriter.close()
         log.info("Task done...")
-        System.setProperty("ReposMetadataWrittenTill", id)
+        clientGitHubReposMetadataDownloader ! "COMPLETED"
+        repoMetadataWriter.close()
       }
     case msg =>
       sender() ! "RECEIVED"
-      val receivedMsg = msg.toString
-      if (receivedMsg.contains("-")) {
-        val args = msg.toString.split('-')
-        val since = args(0).toInt
-        val to = args(1).toInt
-        val writtenFrom = prop.getProperty("ReposMetadataWrittenFrom").toInt
-        val writtenTill = prop.getProperty("ReposMetadataWrittenTill").toInt
-        if ((writtenTill < to) || (writtenFrom > since)) {
-          prop.setProperty("ReposMetadataWrittenFrom", since.toString)
-          prop.setProperty("ReposMetadataRequestedTill", to.toString)
-          log.info("Started Getting repositories info from " + since + " to " + to)
-          var currentSince = since
-          while (currentSince < to) {
-            val (allGithubRepos, nextSince) = GitHubApiHelper.getAllGitHubRepos(currentSince)
-            allGithubRepos.filter(repoMap => repoMap("fork").equals("false")).
-              distinct.foreach(repoMap => {
-              noOfRepos += 1
-              workerRouter ! GetRepositoryMetaData(repoMetadataWriter, repoMap)
-            })
-            currentSince = nextSince
-            noOfRequests += 1;
-          }
+      val args = msg.toString.split('-')
+      val since = args(0).toInt
+      val to = args(1).toInt
+      if (to > since) {
+        log.info("Started Getting repositories info from " + since + " to " + to)
+        var currentSince = since
+        while (currentSince < to) {
+          val allGithubRepos = GitHubReposMetadataDownloaderHelper.getGitHubReposInfoFrom(currentSince)
+          allGithubRepos.filter(repoInfo => repoInfo.toArray.apply(2).equals("false")).
+            distinct.foreach(repoInfo => {
+            noOfRepos += 1
+            workerRouter ! GetRepositoryMetaData(repoMetadataWriter, repoInfo)
+          })
+          currentSince = allGithubRepos.toArray.apply(allGithubRepos.size - 1).toArray.apply(0).toInt
         }
-        sender() ! "COMPLETED"
+        // sender() ! "COMPLETED"
       }
       else
         sender() ! "INPUT-ERROR"
@@ -100,25 +76,29 @@ class GitHubRepoMetadataDownloaderActor extends Actor with Logger {
 
 class RepositoryMetaDataDownloader extends Actor with Logger {
 
+  val conf = ConfigFactory.load()
+
   override def receive: Actor.Receive = {
-    case GetRepositoryMetaData(printWriter, repoMap) =>
+    case GetRepositoryMetaData(repoMetadataWriter, repoInfo) =>
       try {
-        val repoMetadata: Option[String] =
-          GitHubApiHelper.fetchAllDetails(repoMap)
+        val repoMetadata: String =
+          compact(render(GitHubReposMetadataDownloaderHelper.getJsonResponse
+          ("https://api.github.com/repos/" + repoInfo.toArray.apply(1)).get)).toString
         val repoMetadataJson = repoMetadata + "\n"
-        printWriter.write(repoMetadataJson)
+        repoMetadataWriter.write(repoMetadataJson)
       }
       catch {
-        case interruptedException: InterruptedException =>
-          log.error(s"Failed to write " + interruptedException.printStackTrace())
+        case ex: NoSuchElementException =>
+          log.error("Failed to download repo metadata: " + repoInfo)
+          GetRepositoryMetaData(repoMetadataWriter, repoInfo)
       }
       finally {
-        sender() ! Superviser(repoMap("id"))
+        sender() ! updateTaskCompletion()
       }
   }
 }
 
-object GitHubApiHelper extends Logger {
+object GitHubReposMetadataDownloaderHelper extends Logger {
 
   private val client = new HttpClient(new MultiThreadedHttpConnectionManager())
   val conf = ConfigFactory.load()
@@ -126,46 +106,34 @@ object GitHubApiHelper extends Logger {
   @volatile var currentToken = tokens(0)
   @volatile var lastIndex = 0
 
-  def getAllGitHubRepos(since: Int): (List[Map[String, String]], Int) = {
-    val method = executeMethod(s"https://api.github.com/repositories?since=$since", currentToken)
-    val nextSinceValueRaw = Option(method.getResponseHeader("Link").getElements.toList(0).getValue)
-    val nextSince = nextSinceValueRaw.get.substring(0, nextSinceValueRaw.get.length - 1).toInt
-    val json = httpGetJson(method).toList
+  def getGitHubReposInfoFrom(since: Int): List[List[String]] = {
+    val json = getJsonResponse("https://api.github.com/repositories?since=" + since).toList
     val interestingFields = List("id", "full_name", "fork")
     val allGitHubRepos = for {
-      j <- json
-      c <- j.children
-      map = (for {
-        JObject(child) <- c
+      repoJson <- json
+      repoDetails <- repoJson.children
+      list = for {
+        JObject(child) <- repoDetails
         JField(name, value) <- child
         if interestingFields.contains(name)
-      } yield name -> value.values.toString).toMap
-    } yield map
-    (allGitHubRepos, nextSince)
+      } yield value.values.toString
+    } yield list
+    allGitHubRepos
   }
 
-  def executeMethod(url: String, token: String): GetMethod = {
+  def getJsonResponse(url: String): Option[JValue] = {
     val method = new GetMethod(url)
     method.setDoAuthentication(true)
-    method.addRequestHeader("Authorization", s"token $token")
-    log.debug(s"using token $token")
+    method.addRequestHeader("Authorization", "token " + currentToken)
+    log.debug("using token" + currentToken)
     client.executeMethod(method)
-    method
-  }
-
-  def fetchAllDetails(repoMap: Map[String, String]): Option[String] = {
-    for {
-      repo <-
-      httpGetJson(executeMethod("https://api.github.com/repos/" + repoMap("full_name"), currentToken))
-    } yield compact(render(repo))
-  }
-
-  def httpGetJson(method: GetMethod): Option[JValue] = {
-    val status = method.getStatusCode
-    if (status == 200) {
+    val requestLimitRemaining = method.getResponseHeader("X-RateLimit-Remaining").getValue
+    if (requestLimitRemaining == 0)
+      updateToken()
+    if (method.getStatusCode == 200)
       Try(parse(method.getResponseBodyAsString)).toOption
-    } else {
-      log.error("Request failed with status:" + status + "Response:"
+    else {
+      log.error("Request failed with status:" + method.getStatusCode + "Response:"
         + method.getResponseHeaders.mkString("\n") +
         "\n ResponseBody " + method.getResponseBodyAsString)
       None
@@ -182,5 +150,4 @@ object GitHubApiHelper extends Logger {
     }
     log.info("limit 0,token changed :" + currentToken)
   }
-
 }

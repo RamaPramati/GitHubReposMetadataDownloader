@@ -9,7 +9,7 @@ import com.typesafe.config.ConfigFactory
 /**
   * Created by ramakrishnas on 19/7/16.
   */
-class GitHubReposDownloader extends Actor with Logger {
+class ClientGitHubReposMetadataDownloaderActor extends Actor with Logger {
 
   val conf = ConfigFactory.load()
   override def receive: Receive = {
@@ -37,8 +37,8 @@ object ClientGitHubReposMetadataDownloader {
     val configFile = getClass.getClassLoader.
       getResource("clientGitHubReposMetadataDownloader.conf").getFile
     val config = ConfigFactory.parseFile(new File(configFile))
-    val system = ActorSystem("ClientSystem", config)
-    val localActor = system.actorOf(Props[GitHubReposDownloader], name = "local")
+    val system = ActorSystem("ClientGitHubReposMetadataDownloaderActorSystem", config)
+    val localActor = system.actorOf(Props[ClientGitHubReposMetadataDownloaderActor], name = "clientGitHubReposMetadataDownloaderActor")
     localActor ! since + "-" + to
   }
 }
