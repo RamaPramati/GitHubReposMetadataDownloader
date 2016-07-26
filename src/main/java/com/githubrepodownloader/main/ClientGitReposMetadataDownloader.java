@@ -17,12 +17,10 @@ public class ClientGitReposMetadataDownloader {
  public static void main(String args[]) throws IOException {
      BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
      String reposRange = br.readLine();
-     ActorSystem system;
 
-     system = ActorSystem.create("ClientGitHubReposMetadataDownloaderActorSystem", ConfigFactory.load("clientGitHubReposMetadataDownloader"));
-     ActorRef actor = system.actorOf(Props.create(ClientGitHubReposMetadataDownloaderActor.class),
-             "clientGitHubReposMetadataDownloaderActor");
-
-     actor.tell(reposRange, actor);
+     ActorSystem system = ActorSystem.create("ClientGitReposMetadataDownloaderActorSystem", ConfigFactory.load("clientGitHubReposMetadataDownloader.conf"));
+     ActorRef clientGitReposMetadataDownloaderActor = system.actorOf(Props.create(ClientGitReposMetadataDownloaderActor.class),
+             "clientGitReposMetadataDownloaderActor");
+     clientGitReposMetadataDownloaderActor.tell(reposRange, clientGitReposMetadataDownloaderActor);
     }
 }

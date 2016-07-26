@@ -15,18 +15,18 @@ class ClientGitReposMetadataDownloaderActor extends UntypedActor {
 
     private static final Logger LOGGER = Logger.getLogger(ClientGitReposMetadataDownloaderActor.class.getName());
     Config conf = ConfigFactory.load();
+    ActorRef githubReposMetadataDownloaderActor = context().actorFor(conf.getString("remoteGitHubReposMetadataDownloaderPath"));
 
     @Override
     public void onReceive(Object message) throws Exception {
-        if (message.equals("RECEIVED")) {
+        if (message.equals("RECEIVED"))
             LOGGER.info("Remote actor started the given task........");
-        } else if (message.equals("INPUT-ERROR")) {
-            LOGGER.info("Remote actor started the given task........");
-        } else if (message.equals("COMPLETED")) {
-            LOGGER.info("Remote actor started the given task........");
-        } else {
-            ActorRef actor = getContext().actorFor(conf.getString("remoteGitHubReposMetadataDownloaderPath"));
-            actor.tell(message, getSelf());
-        }
+        else if (message.equals("INPUT-ERROR"))
+            LOGGER.info("Wrong input........");
+        else if (message.equals("COMPLETED")) {
+            LOGGER.info("Remote actor completed the given task.......");
+            context().system().shutdown();
+        } else
+            githubReposMetadataDownloaderActor.tell(message, getSelf());
     }
 }
