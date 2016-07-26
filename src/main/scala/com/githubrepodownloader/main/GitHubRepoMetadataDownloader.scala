@@ -48,10 +48,8 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
     case updateTaskCompletion() =>
       noOfRepos -= 1
       if (0 == noOfRepos) {
-        log.info("Task done...")
-        sender() ! "COMPLETED"
         clientGitHubReposMetadataDownloader ! "COMPLETED"
-        var fileLocations = conf.getString("fileLocations").split(',')
+        val fileLocations = conf.getString("fileLocations").split(',')
         var i = 0;
         while (i < fileLocations.size - 1) {
           val repoMetadatasTemp1 = Source.fromFile(conf.getString("metadataDir") + fileLocations.apply(i)).getLines.toList
@@ -61,6 +59,8 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
           reposMetadata.foreach(repoMetadata => result.write(repoMetadata + "\n"))
         }
         result.close()
+        sender() ! "COMPLETED"
+        log.info("Task done...")
       }
     case msg =>
       sender() ! "RECEIVED"
@@ -125,10 +125,10 @@ object GitHubReposMetadataDownloaderHelper extends Logger {
     val json = getJsonResponse("https://api.github.com/repositories?since=" + since).toList
     val interestingFields = List("id", "full_name", "fork")
     val allGitHubRepos = for {
-      repoJson <- json
-      repoDetails <- repoJson.children
+      reposInfoJson <- json
+      repoDetailsJson <- reposInfoJson.children
       list = for {
-        JObject(child) <- repoDetails
+        JObject(child) <- repoDetailsJson
         JField(name, value) <- child
         if interestingFields.contains(name)
       } yield value.values.toString
