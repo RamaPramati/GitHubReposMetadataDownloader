@@ -1,10 +1,11 @@
-package com.githubrepodownloader.main
+package com.githubrepodownloader.main.scala.server
 
 import java.io._
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.routing.RoundRobinPool
 import com.githubrepodownloader.logging.Logger
+import com.githubrepodownloader.main.java
 import com.typesafe.config.ConfigFactory
 import org.apache.commons.httpclient.methods.GetMethod
 import org.apache.commons.httpclient.{HttpClient, MultiThreadedHttpConnectionManager}
@@ -18,9 +19,9 @@ import scala.util.Try
 /**
   * Created by ramakrishnas on 18/7/16.
   */
-case class GetRepositoryMetaData(repoMap: List[String])
+case class RepoMetaDataDownloader(repoInfo: List[String])
 
-case class updateTaskCompletion()
+case class UpdateTaskCompletion()
 
 object GitHubReposMetadataDownloader extends App {
 
@@ -28,7 +29,7 @@ object GitHubReposMetadataDownloader extends App {
     getResource("gitHubReposMetadataDownloader.conf").getFile
   val config = ConfigFactory.parseFile(new java.io.File(configFile))
   val system = ActorSystem("GitHubRepoMetadataDownloaderActorSystem", config)
-  val remoteActor = system.actorOf(Props[GitHubReposMetadataDownloaderActor],
+  val gitHubRepoMetadataDownloaderActor = system.actorOf(Props[GitHubReposMetadataDownloaderActor],
     name = "gitHubRepoMetadataDownloaderActor")
 }
 
@@ -37,7 +38,7 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
   val conf = ConfigFactory.load()
   var noOfRepos = 0
   val noOfWorkers = conf.getString("noOfWorkers").toInt
-  val workerRouter = context.actorOf(Props[RepositoryMetaDataDownloader].
+  val workerRouter = context.actorOf(Props[RepoMetaDataDownloaderActor].
     withRouter(RoundRobinPool(noOfWorkers)), "workers")
   val result = new PrintWriter(conf.getString("metadataDir") +
     "ReposMetadata.txt")
@@ -45,16 +46,18 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
     actorSelection(conf.getString("clientGitHubReposMetadataDownloaderPath"))
 
   override def receive: Actor.Receive = {
-    case updateTaskCompletion() =>
+    case UpdateTaskCompletion() =>
       noOfRepos -= 1
       if (0 == noOfRepos) {
         clientGitHubReposMetadataDownloader ! "COMPLETED"
         val fileLocations = conf.getString("fileLocations").split(',')
-        var i = 0;
-        while (i < fileLocations.size - 1) {
-          val repoMetadatasTemp1 = Source.fromFile(conf.getString("metadataDir") + fileLocations.apply(i)).getLines.toList
-          val repoMetadatasTemp2 = Source.fromFile(conf.getString("metadataDir") + fileLocations.apply(i + 1)).getLines.toList
-          i += 1
+        var fileLocationIndex = 0;
+        while (fileLocationIndex < fileLocations.size - 1) {
+          val repoMetadatasTemp1 = Source.fromFile(conf.getString("metadataDir") +
+            fileLocations.apply(fileLocationIndex)).getLines.toList
+          val repoMetadatasTemp2 = Source.fromFile(conf.getString("metadataDir") +
+            fileLocations.apply(fileLocationIndex + 1)).getLines.toList
+          fileLocationIndex += 1
           val reposMetadata = repoMetadatasTemp1 ++ repoMetadatasTemp2
           reposMetadata.foreach(repoMetadata => result.write(repoMetadata + "\n"))
         }
@@ -75,7 +78,7 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
           allGithubRepos.filter(repoInfo => repoInfo.toArray.apply(2).equals("false")).
             distinct.foreach(repoInfo => {
             noOfRepos += 1
-            workerRouter ! GetRepositoryMetaData(repoInfo)
+            workerRouter ! RepoMetaDataDownloader(repoInfo)
           })
           currentSince = allGithubRepos.toArray.apply(allGithubRepos.size - 1).toArray.apply(0).toInt
         }
@@ -85,14 +88,14 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
   }
 }
 
-class RepositoryMetaDataDownloader extends Actor with Logger {
+class RepoMetaDataDownloaderActor extends Actor with Logger {
 
   val conf = ConfigFactory.load()
   val repoMetadataWriter = new PrintWriter(conf.getString("metadataDir") +
     self.path.name + ".txt")
 
   override def receive: Actor.Receive = {
-    case GetRepositoryMetaData(repoInfo) =>
+    case RepoMetaDataDownloader(repoInfo) =>
       try {
         val repoMetadata: String =
           compact(render(GitHubReposMetadataDownloaderHelper.getJsonResponse
@@ -103,15 +106,16 @@ class RepositoryMetaDataDownloader extends Actor with Logger {
       catch {
         case noSuchElementException: NoSuchElementException =>
           log.error("Failed to download repo metadata: " + repoInfo)
-          GetRepositoryMetaData(repoInfo)
+          // self ! RepoMetaDataDownloader(repoInfo)
       }
       finally {
-        sender() ! updateTaskCompletion()
+        sender() ! UpdateTaskCompletion
       }
     case "COMPLETED" =>
-      repoMetadataWriter.close()
+      repoMetadataWriter.close
   }
 }
+
 
 object GitHubReposMetadataDownloaderHelper extends Logger {
 

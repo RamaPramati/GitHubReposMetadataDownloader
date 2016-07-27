@@ -1,4 +1,4 @@
-package com.githubrepodownloader.main;
+package com.githubrepodownloader.main.java.client;
 
 /**
  * Created by ramakrishnas on 26/7/16.
@@ -15,7 +15,7 @@ class ClientGitReposMetadataDownloaderActor extends UntypedActor {
 
     private static final Logger LOGGER = Logger.getLogger(ClientGitReposMetadataDownloaderActor.class.getName());
     Config conf = ConfigFactory.load();
-    ActorRef githubReposMetadataDownloaderActor = context().actorFor(conf.getString("remoteGitHubReposMetadataDownloaderPath"));
+    ActorRef githubReposMetadataDownloaderActor = context().actorFor(conf.getString("remoteGitReposMetadataDownloaderPath"));
 
     @Override
     public void onReceive(Object message) throws Exception {

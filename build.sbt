@@ -30,3 +30,6 @@ libraryDependencies +=
 
 libraryDependencies +=
    "org.apache.commons" % "commons-vfs2" % "2.1"
+
+libraryDependencies += "org.json" % "json" % "20090211"
+

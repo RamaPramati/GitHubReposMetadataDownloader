@@ -1,4 +1,4 @@
-package com.githubrepodownloader.main
+package com.githubrepodownloader.main.scala.client
 
 import java.io.File
 
@@ -24,7 +24,8 @@ class ClientGitHubReposMetadataDownloaderActor extends Actor with Logger {
       context.system.shutdown
     }
     case msg => {
-      val remoteGitHubReposMetadataDownloader = context.actorSelection(conf.getString("remoteGitHubReposMetadataDownloaderPath"))
+      val remoteGitHubReposMetadataDownloader = context.actorSelection(conf.
+        getString("remoteGitHubReposMetadataDownloaderPath"))
       remoteGitHubReposMetadataDownloader ! msg
     }
   }
@@ -38,7 +39,8 @@ object ClientGitHubReposMetadataDownloader {
       getResource("clientGitHubReposMetadataDownloader.conf").getFile
     val config = ConfigFactory.parseFile(new File(configFile))
     val system = ActorSystem("ClientGitHubReposMetadataDownloaderActorSystem", config)
-    val localActor = system.actorOf(Props[ClientGitHubReposMetadataDownloaderActor], name = "clientGitHubReposMetadataDownloaderActor")
+    val localActor = system.actorOf(Props[ClientGitHubReposMetadataDownloaderActor],
+      name = "clientGitHubReposMetadataDownloaderActor")
     localActor ! since + "-" + to
   }
 }
