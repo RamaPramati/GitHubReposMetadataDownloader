@@ -5,7 +5,6 @@ import java.io._
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.routing.RoundRobinPool
 import com.githubrepodownloader.logging.Logger
-import com.githubrepodownloader.main.java
 import com.typesafe.config.ConfigFactory
 import org.apache.commons.httpclient.methods.GetMethod
 import org.apache.commons.httpclient.{HttpClient, MultiThreadedHttpConnectionManager}
@@ -27,7 +26,7 @@ object GitHubReposMetadataDownloader extends App {
 
   val configFile = getClass.getClassLoader.
     getResource("gitHubReposMetadataDownloader.conf").getFile
-  val config = ConfigFactory.parseFile(new java.io.File(configFile))
+  val config = ConfigFactory.parseFile(new File(configFile))
   val system = ActorSystem("GitHubRepoMetadataDownloaderActorSystem", config)
   val gitHubRepoMetadataDownloaderActor = system.actorOf(Props[GitHubReposMetadataDownloaderActor],
     name = "gitHubRepoMetadataDownloaderActor")
@@ -51,8 +50,8 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
       if (0 == noOfRepos) {
         clientGitHubReposMetadataDownloader ! "COMPLETED"
         val fileLocations = conf.getString("fileLocations").split(',')
-        var fileLocationIndex = 0;
-        while (fileLocationIndex < fileLocations.size - 1) {
+        var fileLocationIndex = 0
+        while (fileLocationIndex < fileLocations.length - 1) {
           val repoMetadatasTemp1 = Source.fromFile(conf.getString("metadataDir") +
             fileLocations.apply(fileLocationIndex)).getLines.toList
           val repoMetadatasTemp2 = Source.fromFile(conf.getString("metadataDir") +
@@ -67,9 +66,9 @@ class GitHubReposMetadataDownloaderActor extends Actor with Logger {
       }
     case msg =>
       sender() ! "RECEIVED"
-      val args = msg.toString.split('-')
-      val since = args(0).toInt
-      val to = args(1).toInt
+      val reposRange = msg.toString.split('-')
+      val since = reposRange(0).toInt
+      val to = reposRange(1).toInt
       if (to > since) {
         log.info("Started Getting repositories info from " + since + " to " + to)
         var currentSince = since
@@ -106,13 +105,13 @@ class RepoMetaDataDownloaderActor extends Actor with Logger {
       catch {
         case noSuchElementException: NoSuchElementException =>
           log.error("Failed to download repo metadata: " + repoInfo)
-          // self ! RepoMetaDataDownloader(repoInfo)
+        // self ! RepoMetaDataDownloader(repoInfo)
       }
       finally {
-        sender() ! UpdateTaskCompletion
+        sender() ! UpdateTaskCompletion()
       }
     case "COMPLETED" =>
-      repoMetadataWriter.close
+      repoMetadataWriter.close()
   }
 }
 
